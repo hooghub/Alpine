@@ -1,21 +1,26 @@
 #!/bin/sh
 # ============================================================
-# masb.sh (Alpine) - sing-box server installer (musl) [FIXED]
+# masb.sh (Alpine) - sing-box server installer (musl)
 # ------------------------------------------------------------
 # 目标：
-#   1) VLESS + Reality (主用，抗封锁)  [双栈：IPv4+IPv6 同端口]
+#   1) VLESS + Reality (主用，抗封锁)
 #   2) VLESS + TLS     (备用，兼容性强)
 #   3) Hysteria2       (UDP，高速)
 #
-# 修复点（相对原版）：
-#   - Reality 入站改为“双栈双入站”：listen 0.0.0.0 + :: 共用同端口
-#   - Reality 入站补齐 tls.server_name（与 handshake.server 一致）
-#   - 可选：强制 net.ipv6.bindv6only=1，避免 :: 抢占 IPv4 导致双入站端口冲突
-#   - 输出链接：IPv4 优先 + 额外输出 IPv6 Reality/TLS/HY2（若检测到 IPv6）
+# 特性：
+#   - 强制检测公网 IPv4/IPv6：至少一个可用，否则退出
+#   - sing-box 稳健安装：当前仓库 -> edge/community -> GitHub release(musl/static)
+#   - Reality keypair 落盘并做一致性校验，避免 pbk/private 不匹配导致 invalid connection
+#   - 端口：可输入 / 回车随机（1000-65535）
+#   - PUBLIC_HOST 不询问：自动选择 IPv4 > IPv6（IPv6 自动加 []）
+#   - 输出 v2rayN 可导入链接（3条）
+#
+# 说明：
+#   - 本脚本默认给 VLESS-TLS/HY2 使用自签证书（insecure=1），便于直接可用
+#   - Reality 的 sni 必须等于 handshake.server（脚本已强制一致）
 #
 # 使用：
-#   sh <(curl -Ls https://raw.githubusercontent.com/hooghub/Alpine/main/masb.sh)
-#   （或把本文件保存为 masb-fixed.sh 后执行：sh masb-fixed.sh）
+#   bash <(curl -Ls https://raw.githubusercontent.com/hooghub/Alpine/main/masb.sh)
 # ============================================================
 
 set -eu
@@ -51,10 +56,10 @@ prompt() {
 rand_port() {
   # 1000-65535，避免常用端口
   if [ -n "${RANDOM:-}" ]; then
-    echo $((1000 + RANDOM % 64536))
+    echo $((1000 + RANDOM % 65535))
   else
     n="$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')"
-    echo $((1000 + n % 64536))
+    echo $((1000 + n % 65535))
   fi
 }
 
@@ -118,17 +123,18 @@ detect_public_ips_strict() {
 
   echo
   echo "---- 公网出口检测（强制）----"
-  [ -n "${PUB4:-}" ] && echo "[+] IPv4：$PUB4" || echo "[-] IPv4：不可用"
-  [ -n "${PUB6:-}" ] && echo "[+] IPv6：$PUB6" || echo "[-] IPv6：不可用"
+  [ -n "$PUB4" ] && echo "[+] IPv4：$PUB4" || echo "[-] IPv4：不可用"
+  [ -n "$PUB6" ] && echo "[+] IPv6：$PUB6" || echo "[-] IPv6：不可用"
   echo "----------------------------"
 
-  [ -n "${PUB4:-}" ] || [ -n "${PUB6:-}" ] || die "未检测到 IPv4 或 IPv6 公网出口，终止部署"
+  [ -n "$PUB4" ] || [ -n "$PUB6" ] || die "未检测到 IPv4 或 IPv6 公网出口，终止部署"
 }
 
 #################################
 # ===== sing-box 安装（稳健）=====
 #################################
 install_singbox() {
+  # 基础依赖：curl/jq/openssl
   apk add --no-cache ca-certificates curl jq openssl >/dev/null
 
   # 1) 当前仓库
@@ -136,7 +142,7 @@ install_singbox() {
   echo "[i] Try: apk add sing-box (current repos)"
   if apk add --no-cache sing-box >/dev/null 2>&1; then return 0; fi
 
-  # 2) edge/community（临时仓库）
+  # 2) edge/community（临时仓库，不污染 /etc/apk/repositories）
   EDGE_COMMUNITY="https://dl-cdn.alpinelinux.org/alpine/edge/community"
   echo "[i] Try: apk add sing-box (edge/community)"
   if apk add --no-cache --repository="$EDGE_COMMUNITY" sing-box >/dev/null 2>&1; then return 0; fi
@@ -193,9 +199,12 @@ install_singbox() {
 #################################
 # ===== Reality：伪装站随机池 + keypair 落盘 =====
 #################################
-pick_random() { awk 'BEGIN{srand()} {a[NR]=$0} END{ if(NR>0) print a[int(rand()*NR)+1] }'; }
+pick_random() {
+  awk 'BEGIN{srand()} {a[NR]=$0} END{ if(NR>0) print a[int(rand()*NR)+1] }'
+}
 
 choose_reality_handshake() {
+  # 你以后想扩充池子，就在这里加域名
   POOL="$(cat <<'EOF'
 www.cloudflare.com
 www.apple.com
@@ -217,10 +226,13 @@ EOF
     echo "[+] 已随机选择：$REALITY_HANDSHAKE_SERVER"
   fi
   REALITY_HANDSHAKE_PORT="443"
+
+  # 关键：客户端 sni 必须等于服务端 handshake.server（脚本强制一致）
   REALITY_CLIENT_SNI="$REALITY_HANDSHAKE_SERVER"
 }
 
 generate_reality_keypair_persist() {
+  # 每次部署都生成新对，避免历史残留导致 pbk/private 不一致
   mkdir -p /etc/sing-box
   KEY_PRIV_FILE="/etc/sing-box/reality_private_key.txt"
   KEY_PUB_FILE="/etc/sing-box/reality_public_key.txt"
@@ -248,6 +260,7 @@ generate_reality_keypair_persist() {
 # ===== TLS 证书（自签，供 VLESS-TLS / HY2 共用）=====
 #################################
 make_self_signed_cert() {
+  # 用法：make_self_signed_cert SNI CERT KEY FULLCHAIN
   SNI="$1"
   CERT_PATH="$2"
   KEY_PATH="$3"
@@ -255,6 +268,7 @@ make_self_signed_cert() {
 
   mkdir -p "$(dirname "$CERT_PATH")" "$(dirname "$KEY_PATH")" "$(dirname "$FULLCHAIN_PATH")"
 
+  # 含 SAN，降低客户端兼容性问题
   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
     -keyout "$KEY_PATH" -out "$CERT_PATH" \
     -subj "/CN=${SNI}" \
@@ -290,12 +304,13 @@ RC_EOF
 # ===== 一致性校验：拒绝输出“错链接” =====
 #################################
 sanity_check_reality_consistency() {
+  # config private_key 必须等于落盘 priv，否则说明中途被改了
   CONF_PRIV="$(grep -oE '"private_key":[[:space:]]*"[^"]+"' /etc/sing-box/config.json | head -n1 | cut -d'"' -f4)"
-  [ -n "${CONF_PRIV:-}" ] || die "sanity: config private_key not found"
+  [ -n "$CONF_PRIV" ] || die "sanity: config private_key not found"
 
   DISK_PRIV="$(cat /etc/sing-box/reality_private_key.txt 2>/dev/null || true)"
   DISK_PUB="$(cat /etc/sing-box/reality_public_key.txt 2>/dev/null || true)"
-  [ -n "${DISK_PRIV:-}" ] && [ -n "${DISK_PUB:-}" ] || die "sanity: reality key files missing"
+  [ -n "$DISK_PRIV" ] && [ -n "$DISK_PUB" ] || die "sanity: reality key files missing"
 
   if [ "$CONF_PRIV" != "$DISK_PRIV" ]; then
     echo "[x] 配置文件 private_key 与落盘 priv 不一致，拒绝输出错误链接"
@@ -320,11 +335,18 @@ detect_public_ips_strict
 # 目录准备
 mkdir -p /etc/sing-box /etc/sing-box/tls /var/log/sing-box
 
+#################################
+# ===== 端口输入/随机 =====
+# 你以后想固定端口，把下面三个变量直接写死即可
+#################################
 echo
 pick_port VLESS_REALITY_PORT "VLESS Reality"
 pick_port VLESS_TLS_PORT     "VLESS TLS"
 pick_port HY2_PORT           "Hysteria2"
 
+#################################
+# ===== Reality 参数 =====
+#################################
 choose_reality_handshake
 generate_reality_keypair_persist
 
@@ -332,23 +354,26 @@ generate_reality_keypair_persist
 REALITY_PRIV="$(cat /etc/sing-box/reality_private_key.txt)"
 REALITY_PUB="$(cat /etc/sing-box/reality_public_key.txt)"
 
+#################################
+# ===== 账号/密码 =====
+#################################
 UUID="$(gen_uuid)"
-SHORT_ID="$(rand_hex 4)"
-HY2_PASSWORD="$(rand_hex 16)"
+SHORT_ID="$(rand_hex 4)"          # Reality sid（8 hex）
+HY2_PASSWORD="$(rand_hex 16)"     # HY2 密码（一个即可）
 
-TLS_SNI="example.com"
+#################################
+# ===== TLS（自签，供 VLESS-TLS/HY2）=====
+#################################
+TLS_SNI="example.com"   # 以后要换成域名就改这里（或接入 LE）
 TLS_CERT="/etc/sing-box/tls/cert.pem"
 TLS_KEY="/etc/sing-box/tls/key.pem"
 TLS_FULLCHAIN="/etc/sing-box/tls/fullchain.pem"
 make_self_signed_cert "$TLS_SNI" "$TLS_CERT" "$TLS_KEY" "$TLS_FULLCHAIN"
-TLS_INSECURE="1"
-
-# ====== 关键修复：尽量避免 :: 同时接管 IPv4 导致双入站端口冲突 ======
-# 如果你的系统本来就是 v6only=1，这行无害；若是 0，会让 IPv6 只接 IPv6，允许同时起 v4+v6 两个入站
-sysctl -w net.ipv6.bindv6only=1 >/dev/null 2>&1 || true
+TLS_INSECURE="1"        # 自签必须 insecure=1
 
 #################################
-# ===== sing-box 配置写入（修复版：Reality 双栈）=====
+# ===== sing-box 配置写入 =====
+# 重点：VLESS-REALITY / VLESS-TLS / HY2 三个入站
 #################################
 CONFIG_PATH="/etc/sing-box/config.json"
 cat > "$CONFIG_PATH" <<EOF
@@ -361,42 +386,21 @@ cat > "$CONFIG_PATH" <<EOF
   "inbounds": [
     {
       "type": "vless",
-      "tag": "vless-reality-v4",
-      "listen": "0.0.0.0",
-      "listen_port": ${VLESS_REALITY_PORT},
-      "users": [
-        { "uuid": "${UUID}", "flow": "" }
-      ],
-      "tls": {
-        "enabled": true,
-        "server_name": "${REALITY_HANDSHAKE_SERVER}",
-        "reality": {
-          "enabled": true,
-          "handshake": {
-            "server": "${REALITY_HANDSHAKE_SERVER}",
-            "server_port": 443
-          },
-          "private_key": "${REALITY_PRIV}",
-          "short_id": ["${SHORT_ID}"]
-        }
-      }
-    },
-    {
-      "type": "vless",
-      "tag": "vless-reality-v6",
+      "tag": "vless-reality",
       "listen": "::",
       "listen_port": ${VLESS_REALITY_PORT},
       "users": [
-        { "uuid": "${UUID}", "flow": "" }
+        { "uuid": "${UUID}",
+        "flow": ""
+        }
       ],
       "tls": {
         "enabled": true,
-        "server_name": "${REALITY_HANDSHAKE_SERVER}",
         "reality": {
           "enabled": true,
-          "handshake": {
-            "server": "${REALITY_HANDSHAKE_SERVER}",
-            "server_port": 443
+          "handshake": { 
+          "server": "${REALITY_HANDSHAKE_SERVER}",
+          "server_port": 443 
           },
           "private_key": "${REALITY_PRIV}",
           "short_id": ["${SHORT_ID}"]
@@ -443,61 +447,38 @@ EOF
 echo "[+] 写入配置：$CONFIG_PATH"
 sing-box check -c "$CONFIG_PATH" >/dev/null
 
+# OpenRC
 ensure_openrc_service
 rc-service sing-box restart >/dev/null 2>&1 || rc-service sing-box start >/dev/null 2>&1 || true
 
+# 一致性校验：拒绝输出错链接
 sanity_check_reality_consistency
 
 #################################
-# ===== PUBLIC_HOST 自动选择 =====
+# ===== PUBLIC_HOST 自动选择（不询问）=====
+# IPv4 > IPv6（IPv6 自动加 []）
 #################################
 if [ -n "${PUB4:-}" ]; then
-  PUBLIC_HOST4="$PUB4"
+  PUBLIC_HOST="$PUB4"
 else
-  PUBLIC_HOST4=""
+  PUBLIC_HOST="[$PUB6]"
 fi
-if [ -n "${PUB6:-}" ]; then
-  PUBLIC_HOST6="[$PUB6]"
-else
-  PUBLIC_HOST6=""
-fi
-
-# 默认输出/保存：IPv4 优先；若无 IPv4 用 IPv6
-if [ -n "${PUBLIC_HOST4:-}" ]; then
-  PUBLIC_HOST="$PUBLIC_HOST4"
-else
-  PUBLIC_HOST="$PUBLIC_HOST6"
-fi
-echo "[i] 分享链接使用的默认地址：$PUBLIC_HOST"
+echo "[i] 分享链接使用的地址：$PUBLIC_HOST"
 
 #################################
-# ===== v2rayN 导入链接（3条 + 可选 IPv6 版本）=====
+# ===== v2rayN 导入链接（3条）=====
+# Reality：强制完整参数，避免 v2rayN 解析差异
 #################################
 ENC_R_SNI="$(urlencode "$REALITY_CLIENT_SNI")"
 ENC_TLS_SNI="$(urlencode "$TLS_SNI")"
 
-make_links_for_host() {
-  HOST="$1"
-  VLESS_REALITY_LINK="vless://${UUID}@${HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality-${HOST}"
-  VLESS_TLS_LINK="vless://${UUID}@${HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS-${HOST}"
-  HY2_LINK="hysteria2://${HY2_PASSWORD}@${HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2-${HOST}"
-  printf "%s\n%s\n%s\n" "$VLESS_REALITY_LINK" "$VLESS_TLS_LINK" "$HY2_LINK"
-}
+VLESS_REALITY_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality-${PUBLIC_HOST}"
+VLESS_TLS_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS-${PUBLIC_HOST}"
+HY2_LINK="hysteria2://${HY2_PASSWORD}@${PUBLIC_HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2-${PUBLIC_HOST}"
 
 LINKS_PATH="/etc/sing-box/v2rayn_links.txt"
-: > "$LINKS_PATH"
+printf "%s\n%s\n%s\n" "$VLESS_REALITY_LINK" "$VLESS_TLS_LINK" "$HY2_LINK" > "$LINKS_PATH"
 chmod 600 "$LINKS_PATH" || true
-
-# 写默认 host（三条）
-make_links_for_host "$PUBLIC_HOST" >> "$LINKS_PATH"
-
-# 若同时有 v4+v6，再额外写一组（方便你直接复制）
-if [ -n "${PUBLIC_HOST4:-}" ] && [ -n "${PUBLIC_HOST6:-}" ]; then
-  echo "" >> "$LINKS_PATH"
-  make_links_for_host "$PUBLIC_HOST4" >> "$LINKS_PATH"
-  echo "" >> "$LINKS_PATH"
-  make_links_for_host "$PUBLIC_HOST6" >> "$LINKS_PATH"
-fi
 
 #################################
 # ===== 输出摘要 =====
@@ -507,7 +488,7 @@ echo "================== 部署完成 =================="
 echo "公网检测 IPv4：       ${PUB4:-无}"
 echo "公网检测 IPv6：       ${PUB6:-无}"
 echo
-echo "---- VLESS Reality（双栈同端口）----"
+echo "---- VLESS Reality ----"
 echo "端口：               ${VLESS_REALITY_PORT}"
 echo "伪装目标：           ${REALITY_HANDSHAKE_SERVER}:${REALITY_HANDSHAKE_PORT}"
 echo "SNI：                ${REALITY_CLIENT_SNI}"
@@ -525,11 +506,14 @@ echo
 echo "UUID：               ${UUID}"
 echo "HY2 password：       ${HY2_PASSWORD}"
 echo
-echo "---- v2rayN 可导入链接 ----"
-echo "已写入：$LINKS_PATH"
-echo "查看：cat $LINKS_PATH"
+echo "---- v2rayN 可导入链接（3条）----"
+echo "$VLESS_REALITY_LINK"
+echo "$VLESS_TLS_LINK"
+echo "$HY2_LINK"
 echo
+echo "已写入：$LINKS_PATH"
 echo "服务管理：rc-service sing-box restart | stop | start"
 echo "日志查看：tail -f /var/log/sing-box/sing-box.log"
+echo "配置信息：singbox配置 /etc/sing-box/config.json"
 echo
 echo "提示：Reality 客户端建议使用 Xray-core（v2rayN 里选择 Xray-core）。"
