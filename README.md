@@ -81,6 +81,7 @@ riscv64
 
 🚀 使用方法
 一键运行
+
 '''
 bash <(curl -Ls https://raw.githubusercontent.com/hooghub/Alpine/main/masb.sh)
 
