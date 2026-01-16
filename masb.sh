@@ -388,7 +388,7 @@ cat > "$CONFIG_PATH" <<EOF
     {
       "type": "vless",
       "tag": "vless-reality",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": ${VLESS_REALITY_PORT},
       "users": [
         { "uuid": "${UUID}",
@@ -412,7 +412,7 @@ cat > "$CONFIG_PATH" <<EOF
     {
       "type": "vless",
       "tag": "in-vless-tls",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": ${VLESS_TLS_PORT},
       "users": [
         { "uuid": "${UUID}" }
@@ -427,7 +427,7 @@ cat > "$CONFIG_PATH" <<EOF
     {
       "type": "hysteria2",
       "tag": "in-hy2",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": ${HY2_PORT},
       "users": [
         { "password": "${HY2_PASSWORD}" }
