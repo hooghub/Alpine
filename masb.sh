@@ -11,7 +11,7 @@
 #   - 强制检测公网 IPv4/IPv6：至少一个可用，否则退出
 #   - sing-box 稳健安装：当前仓库 -> edge/community -> GitHub release(musl/static)
 #   - Reality keypair 落盘并做一致性校验，避免 pbk/private 不匹配导致 invalid connection
-#   - 端口：可输入 / 回车随机（1000-64536）
+#   - 端口：可输入 / 回车随机（10000-64536）
 #   - PUBLIC_HOST 不询问：自动选择 IPv4 > IPv6（IPv6 自动加 []）
 #   - 输出 v2rayN 可导入链接（3条）
 #
@@ -54,12 +54,12 @@ prompt() {
 # ===== 端口选择：可输入/可随机 =====
 #################################
 rand_port() {
-  # 1000-65535，避免常用端口
+  # 10000-64536，避免常用端口
   if [ -n "${RANDOM:-}" ]; then
-    echo $((1000 + RANDOM % 64536))
+    echo $((10000 + RANDOM % 64536))
   else
     n="$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')"
-    echo $((1000 + n % 64536))
+    echo $((10000 + n % 64536))
   fi
 }
 
