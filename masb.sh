@@ -511,5 +511,6 @@ echo
 echo "已写入：$LINKS_PATH"
 echo "服务管理：rc-service sing-box restart | stop | start"
 echo "日志查看：tail -f /var/log/sing-box/sing-box.log"
+echo "配置信息：singbox配置 /etc/sing-box/config.json"
 echo
 echo "提示：Reality 客户端建议使用 Xray-core（v2rayN 里选择 Xray-core）。"
