@@ -376,7 +376,8 @@ TLS_INSECURE="1"        # 自签必须 insecure=1
 # 重点：VLESS-REALITY / VLESS-TLS / HY2 三个入站
 #################################
 CONFIG_PATH="/etc/sing-box/config.json"
-cat > "$CONFIG_PATH" <<EOF
+cat > "$CONFIG_PATH" <<'EOF'
+
 {
   "log": {
     "level": "debug",
