@@ -397,6 +397,7 @@ cat > "$CONFIG_PATH" <<EOF
       ],
       "tls": {
         "enabled": true,
+        "server_name": "${REALITY_HANDSHAKE_SERVER}",
         "reality": {
           "enabled": true,
           "handshake": { 
