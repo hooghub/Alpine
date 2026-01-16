@@ -379,7 +379,7 @@ CONFIG_PATH="/etc/sing-box/config.json"
 cat > "$CONFIG_PATH" <<EOF
 {
   "log": {
-    "level": "info",
+    "level": "debug",
     "timestamp": true,
     "output": "/var/log/sing-box/sing-box.log"
   },
