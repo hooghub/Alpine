@@ -54,12 +54,12 @@ prompt() {
 # ===== 端口选择：可输入/可随机 =====
 #################################
 rand_port() {
-  # 20000-59999，避免常用端口
+  # 1000-65535，避免常用端口
   if [ -n "${RANDOM:-}" ]; then
-    echo $((20000 + RANDOM % 40000))
+    echo $((1000 + RANDOM % 65535))
   else
     n="$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')"
-    echo $((20000 + n % 40000))
+    echo $((1000 + n % 65535))
   fi
 }
 
@@ -214,6 +214,7 @@ www.bing.com
 www.wikipedia.org
 www.netflix.com
 www.microsoft.com
+www.yahoo.com
 EOF
 )"
   echo
@@ -385,17 +386,19 @@ cat > "$CONFIG_PATH" <<EOF
   "inbounds": [
     {
       "type": "vless",
-      "tag": "in-vless-reality",
-      "listen": "0.0.0.0",
+      "tag": "vless-reality",
+      "listen": "::",
       "listen_port": ${VLESS_REALITY_PORT},
       "users": [
-        { "uuid": "${UUID}" }
+        { "uuid": "${UUID}",
+        "flow": ""
+        }
       ],
       "tls": {
         "enabled": true,
         "reality": {
           "enabled": true,
-          "handshake": { "server": "${REALITY_HANDSHAKE_SERVER}", "server_port": ${REALITY_HANDSHAKE_PORT} },
+          "handshake": { "server": "${REALITY_HANDSHAKE_SERVER}", "server_port": 443 },
           "private_key": "${REALITY_PRIV}",
           "short_id": ["${SHORT_ID}"]
         }
@@ -466,9 +469,9 @@ echo "[i] 分享链接使用的地址：$PUBLIC_HOST"
 ENC_R_SNI="$(urlencode "$REALITY_CLIENT_SNI")"
 ENC_TLS_SNI="$(urlencode "$TLS_SNI")"
 
-VLESS_REALITY_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality"
-VLESS_TLS_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS"
-HY2_LINK="hysteria2://${HY2_PASSWORD}@${PUBLIC_HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2"
+VLESS_REALITY_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality@${PUBLIC_HOST}"
+VLESS_TLS_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS@${PUBLIC_HOST}"
+HY2_LINK="hysteria2://${HY2_PASSWORD}@${PUBLIC_HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2@${PUBLIC_HOST}"
 
 LINKS_PATH="/etc/sing-box/v2rayn_links.txt"
 printf "%s\n%s\n%s\n" "$VLESS_REALITY_LINK" "$VLESS_TLS_LINK" "$HY2_LINK" > "$LINKS_PATH"
