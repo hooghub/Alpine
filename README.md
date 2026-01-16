@@ -85,6 +85,9 @@ riscv64
 ```
 bash <(curl -Ls https://raw.githubusercontent.com/hooghub/Alpine/main/masb.sh)
 ```
+```
+bash <(wget -qO- https://raw.githubusercontent.com/hooghub/Alpine/main/masb.sh)
+```
 
 必须使用 root 用户 运行。
 
