@@ -115,11 +115,15 @@ Hysteria2
 
 或从内置池中随机选择，例如：
 
-www.cloudflare.com
-
+# www.cloudflare.com
 www.apple.com
-
 www.google.com
+www.gstatic.com
+www.bing.com
+www.wikipedia.org
+www.netflix.com
+www.microsoft.com
+www.yahoo.com
 
 Reality 的 sni 与 handshake.server 强制一致
 
