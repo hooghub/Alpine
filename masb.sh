@@ -398,7 +398,6 @@ cat > "$CONFIG_PATH" <<EOF
         "enabled": true,
         "reality": {
           "enabled": true,
-          "server": "${REALITY_HANDSHAKE_SERVER}",
           "handshake": { 
           "server": "${REALITY_HANDSHAKE_SERVER}",
           "server_port": 443 
