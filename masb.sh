@@ -11,7 +11,7 @@
 #   - 强制检测公网 IPv4/IPv6：至少一个可用，否则退出
 #   - sing-box 稳健安装：当前仓库 -> edge/community -> GitHub release(musl/static)
 #   - Reality keypair 落盘并做一致性校验，避免 pbk/private 不匹配导致 invalid connection
-#   - 端口：可输入 / 回车随机（20000-59999）
+#   - 端口：可输入 / 回车随机（1000-65535）
 #   - PUBLIC_HOST 不询问：自动选择 IPv4 > IPv6（IPv6 自动加 []）
 #   - 输出 v2rayN 可导入链接（3条）
 #
@@ -407,7 +407,7 @@ cat > "$CONFIG_PATH" <<EOF
     {
       "type": "vless",
       "tag": "in-vless-tls",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": ${VLESS_TLS_PORT},
       "users": [
         { "uuid": "${UUID}" }
@@ -422,7 +422,7 @@ cat > "$CONFIG_PATH" <<EOF
     {
       "type": "hysteria2",
       "tag": "in-hy2",
-      "listen": "0.0.0.0",
+      "listen": "::",
       "listen_port": ${HY2_PORT},
       "users": [
         { "password": "${HY2_PASSWORD}" }
@@ -469,9 +469,9 @@ echo "[i] 分享链接使用的地址：$PUBLIC_HOST"
 ENC_R_SNI="$(urlencode "$REALITY_CLIENT_SNI")"
 ENC_TLS_SNI="$(urlencode "$TLS_SNI")"
 
-VLESS_REALITY_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality@${PUBLIC_HOST}"
-VLESS_TLS_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS@${PUBLIC_HOST}"
-HY2_LINK="hysteria2://${HY2_PASSWORD}@${PUBLIC_HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2@${PUBLIC_HOST}"
+VLESS_REALITY_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_REALITY_PORT}?type=tcp&encryption=none&security=reality&sni=${ENC_R_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${SHORT_ID}#VLESS-Reality-${PUBLIC_HOST}"
+VLESS_TLS_LINK="vless://${UUID}@${PUBLIC_HOST}:${VLESS_TLS_PORT}?type=tcp&encryption=none&security=tls&sni=${ENC_TLS_SNI}#VLESS-TLS-${PUBLIC_HOST}"
+HY2_LINK="hysteria2://${HY2_PASSWORD}@${PUBLIC_HOST}:${HY2_PORT}?sni=${ENC_TLS_SNI}&insecure=${TLS_INSECURE}#HY2-${PUBLIC_HOST}"
 
 LINKS_PATH="/etc/sing-box/v2rayn_links.txt"
 printf "%s\n%s\n%s\n" "$VLESS_REALITY_LINK" "$VLESS_TLS_LINK" "$HY2_LINK" > "$LINKS_PATH"
