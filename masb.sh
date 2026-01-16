@@ -364,7 +364,7 @@ HY2_PASSWORD="$(rand_hex 16)"     # HY2 密码（一个即可）
 #################################
 # ===== TLS（自签，供 VLESS-TLS/HY2）=====
 #################################
-TLS_SNI="example.com"   # 以后要换成域名就改这里（或接入 LE）
+TLS_SNI="www.kyn.com"   # 以后要换成域名就改这里（或接入 LE）
 TLS_CERT="/etc/sing-box/tls/cert.pem"
 TLS_KEY="/etc/sing-box/tls/key.pem"
 TLS_FULLCHAIN="/etc/sing-box/tls/fullchain.pem"
